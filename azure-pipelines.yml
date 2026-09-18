@@ -11,10 +11,12 @@ pool:
 
 steps:
   - task: Maven@3
+    displayName: 'Build and verify application'
     inputs:
       mavenPomFile: 'pom.xml'
-      goals: 'clean test'
-    continueOnError: true
+      goals: 'clean verify'
+      publishJUnitResults: true
+      testResultsFiles: '**/surefire-reports/TEST-*.xml'
 
   - task: Docker@2
     inputs:
