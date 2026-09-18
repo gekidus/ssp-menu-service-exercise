@@ -6,6 +6,9 @@ trigger:
 pool:
   vmImage: 'ubuntu-latest'
 
+variables:
+  imageTag: '$(Build.BuildId)'
+
 steps:
   - task: Maven@3
     displayName: 'Build and verify application'
@@ -16,15 +19,16 @@ steps:
       testResultsFiles: '**/surefire-reports/TEST-*.xml'
 
   - task: Docker@2
+    displayName: 'Build and push Docker image'
     inputs:
       command: 'buildAndPush'
       repository: 'ssp/menu-service'
       dockerfile: 'Dockerfile'
       containerRegistry: 'ssp-acr-connection'
-      tags: 'latest'
+      tags: '$(imageTag)'
 
   - task: AzureWebApp@1
     inputs:
       azureSubscription: 'ssp-azure-connection'
       appName: 'ssp-menu-service-prod'
-      containers: 'sspacr.azurecr.io/ssp/menu-service:latest'
+      containers: 'sspacr.azurecr.io/ssp/menu-service:$(imageTag)'
