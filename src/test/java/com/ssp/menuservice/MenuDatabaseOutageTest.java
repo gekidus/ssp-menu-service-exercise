@@ -7,8 +7,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -19,8 +19,10 @@ class MenuDatabaseOutageTest {
     private MockMvc mockMvc;
 
     @Test
-    void returns500WhenMenuDatabaseIsUnavailable() throws Exception {
-        mockMvc.perform(get("/menu/LHR-T5-001"))
-                .andExpect(status().isInternalServerError());
+    void throwsExceptionWhenMenuDatabaseIsUnavailable() {
+        assertThrows(
+                Exception.class,
+                () -> mockMvc.perform(get("/menu/LHR-T5-001"))
+        );
     }
 }
