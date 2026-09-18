@@ -84,11 +84,13 @@ The aim is to improve security, reliability, reproducibility and deployment qual
 
 ### Issue: Database password is hard-coded in source control
 
-**Current state:** `dbPassword` contains a plaintext password in `azure-pipelines.yml`.
+### Hard-coded database password
 
-**Fix:** Remove the plaintext credential and use an appropriate secret-management mechanism.
+**Original issue:** `dbPassword` contained a plaintext password in `azure-pipelines.yml`.
 
-**Why it matters:** Credentials must not be committed to source control.
+**Remediation:** Removed the unused credential from the pipeline. No application or deployment step referenced the variable, so retaining it provided no functional value and created an unnecessary secret-management risk.
+
+**Current state:** No database password is stored in the repository or pipeline YAML. If a database credential is required in a future deployment, it should be supplied through a protected secret mechanism such as Azure Key Vault or Azure DevOps secret variables rather than source control.
 
 ### Issue: Test failures do not fail the pipeline
 

@@ -3,9 +3,6 @@ trigger:
     include:
       - '*'
 
-variables:
-  dbPassword: 'P@ssw0rd123'
-
 pool:
   vmImage: 'ubuntu-latest'
 
