@@ -20,9 +20,20 @@ class MenuDatabaseOutageTest {
 
     @Test
     void throwsExceptionWhenMenuDatabaseIsUnavailable() {
-        assertThrows(
+        Exception exception = assertThrows(
                 Exception.class,
                 () -> mockMvc.perform(get("/menu/LHR-T5-001"))
+        );
+
+        Throwable cause = exception.getCause();
+
+        while (cause != null && !(cause instanceof IllegalStateException)) {
+            cause = cause.getCause();
+        }
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                cause instanceof IllegalStateException,
+                "Expected IllegalStateException caused by database outage"
         );
     }
 }
