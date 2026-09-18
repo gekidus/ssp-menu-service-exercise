@@ -1,131 +1,199 @@
-# Fixes
+# FIXES.md
 
-List every problem you found in the starter files. For each one, note
-the file, the fix, and why it matters for a service running across
-3,000 outlets.
+## Overview
 
+This document records issues identified in the supplied starter repository, the remediation applied, and the rationale for each change.
 
-## Problem 1
+The aim is to improve security, reliability, reproducibility and deployment quality without introducing unnecessary application-level changes outside the scope of the exercise.
 
-File: Dockerfile  
-Fix: Convert to a multi-stage build: use a Maven image to build the JAR in stage 1, then copy only the JAR into a slim JRE runtime image in stage 2.  
-Why it matters: At 3,000 outlets, every MB of image size affects pull time, deployment speed, and storage costs. A slim runtime image also reduces the attack surface and number of vulnerabilities.
+---
 
+## Dockerfile
 
-## Problem 2
+### Issue: Unpinned Maven base image
 
-File: Dockerfile  
-Fix: Add a non-root user and run the Java process as that user (e.g. `appuser`).  
-Why it matters: Running as root in containers is a security risk. If an attacker compromises the app, they have more power inside the container. At scale, this increases blast radius across thousands of nodes.
+**Current state:** The Dockerfile uses `maven:latest`.
 
+**Fix:** Replace the floating `latest` image with a pinned Java/Maven build image.
 
-## Problem 3
+**Why it matters:** A floating base image can change between builds, reducing reproducibility and potentially introducing unexpected dependency or security changes.
 
-File: Dockerfile  
-Fix: Pin specific image tags instead of using `maven:latest` and implicit Java versions.  
-Why it matters: `latest` can change unexpectedly, breaking builds or introducing vulnerabilities. For 3,000 outlets, reproducible builds and predictable behaviour are critical for reliability and auditing.
+### Issue: Single-stage container build
 
+**Current state:** The Maven build environment is also used as the runtime image.
 
-## Problem 4
+**Fix:** Use a multi-stage Docker build with a Maven/JDK build stage and a smaller Java runtime stage.
 
-File: Dockerfile  
-Fix: Use the correct JAR name and path (confirm `target/menu-service.jar` matches the actual artifact) and ensure only the built JAR is copied into the runtime image.  
-Why it matters: Hard-coded or incorrect paths cause runtime failures. At scale, inconsistent images lead to hard-to-debug issues and longer incident resolution times.
+**Why it matters:** The production container does not need Maven or the JDK build tooling. Removing them reduces image size and attack surface.
 
+### Issue: Entire repository copied into the image
 
-## Problem 5
+**Current state:** `COPY . .`
 
-File: azure-pipelines.yml  
-Fix: Remove the hardcoded secret `dbPassword: 'P@ssw0rd123'` from the pipeline and use Azure Key Vault or pipeline secret variables instead.  
-Why it matters: Hardcoded credentials in YAML are a major security risk. With many outlets and environments, leaked secrets could compromise multiple systems and regions.
+**Fix:** Copy only the files required for the Maven build and resulting application artefact, with an appropriate `.dockerignore`.
 
+**Why it matters:** Avoids unnecessarily including source-control metadata, local files and other build artefacts in the container image.
 
-## Problem 6
+### Issue: Container runs with unnecessary privileges
 
-File: azure-pipelines.yml  
-Fix: Do not set `continueOnError: true` on the Maven test step; instead, publish test results and fail the build on test failures.  
-Why it matters: Silently ignoring test failures allows broken or regressions to reach production. Across 3,000 outlets, this could cause widespread POS failures during peak trading.
+**Current state:** No non-root runtime user is configured.
 
+**Fix:** Create and use a dedicated non-root application user.
 
-## Problem 7
+**Why it matters:** Follows the principle of least privilege and reduces the impact of a potential container compromise.
 
-File: azure-pipelines.yml  
-Fix: Add explicit test result publication (PublishTestResults) and code coverage reporting, plus a gate to fail the build if coverage is below 70%.  
-Why it matters: Without visibility into test health, quality degrades over time. At scale, this increases the risk of outages and makes it harder to detect risky changes early.
+### Issue: Tests skipped during image build
 
+**Current state:** Maven is invoked with `-DskipTests`.
 
-## Problem 8
+**Fix:** Keep testing responsibility in the CI pipeline while ensuring the production image build consumes a verified application artefact.
 
-File: azure-pipelines.yml  
-Fix: Add a container image vulnerability scanning step before pushing to the registry.  
-Why it matters: Vulnerable base images or dependencies can be exploited. With thousands of outlets, a single vulnerable image can be replicated widely, magnifying risk.
+**Why it matters:** Tests should be an explicit CI quality gate rather than silently being skipped without explanation.
 
+---
 
-## Problem 9
+## Maven / Application
 
-File: azure-pipelines.yml  
-Fix: Introduce separate stages for dev and prod, use Azure DevOps environments, and require manual approval for prod deployments.  
-Why it matters: Direct deploys to prod on every commit are risky. For a global estate, you need change control and the ability to validate in dev before rolling out broadly.
+### Issue: Spring Boot 2.7.18 is at the end of its open-source support lifecycle
 
+**Current state:** The application uses Spring Boot 2.7.18.
 
-## Problem 10
+**Fix:** Do not perform a major Spring Boot migration as part of this exercise. Record migration to a supported Spring Boot generation as future technical debt.
 
-File: azure-pipelines.yml  
-Fix: Add a time-based guardrail to block production deployments between 06:00 and 10:00 UK time.  
-Why it matters: The business rule exists to protect the breakfast peak. Ignoring this could cause outages or performance issues during the busiest trading window across UK outlets.
+**Why it matters:** Spring Boot 2.7.18 is the final 2.7 open-source release. A future upgrade should be planned, but introducing a major framework migration during a focused DevOps exercise would increase scope and risk unnecessarily.
 
+### Issue: Direct dependency on Log4j Core 2.14.1
 
-## Problem 11
+**Current state:** `log4j-core` version `2.14.1` is explicitly declared.
 
-File: azure-pipelines.yml  
-Fix: Add post-deployment smoke tests that call `/health` and `/menu/{unitId}` with retries, and fail the pipeline if they don’t pass.  
-Why it matters: A deployment that appears successful but returns errors is worse than a failed deployment. At scale, you need automated validation to catch bad releases before they affect many sites.
+**Fix:** Investigate whether the dependency is actually required. If it is not required by the application, remove the direct dependency and rely on the Spring Boot-managed logging stack. If Log4j is required, move to a supported secure version.
 
+**Why it matters:** The supplied version is affected by known Log4j security vulnerabilities and should not remain as an unnecessary direct dependency.
 
-## Problem 12
+### Issue: Coverage is generated but not currently enforced
 
-File: azure-pipelines.yml  
-Fix: Remove hardcoded values (registry name, app name, etc.) and use variables / variable groups so dev and prod can differ cleanly.  
-Why it matters: Hardcoding makes multi-environment and multi-country scaling error-prone. For 3,000 outlets across many regions, you need consistent, parameterised pipelines.
+**Current state:** JaCoCo generates a report but the Maven build does not enforce a minimum coverage threshold.
 
+**Fix:** Add a JaCoCo coverage rule requiring at least 70% line coverage.
 
-## Problem 13
+**Why it matters:** Coverage reporting provides visibility, while an enforced threshold creates an actual quality gate.
 
-File: infra/main.tf  
-Fix: Add missing resources: Key Vault, Application Insights, and Log Analytics workspace.  
-Why it matters: Without Key Vault, secrets are not managed securely. Without Application Insights/Log Analytics, you lack observability. At scale, this makes incidents harder to detect and resolve.
+---
 
+## Azure Pipelines
 
-## Problem 14
+### Issue: Database password is hard-coded in source control
 
-File: infra/main.tf  
-Fix: Disable `admin_enabled` on the Container Registry and use managed identity / RBAC (`AcrPull`) for the App Service to pull images.  
-Why it matters: Admin credentials on ACR are a security risk. With many environments and countries, you want least-privilege access and no shared admin passwords.
+**Current state:** `dbPassword` contains a plaintext password in `azure-pipelines.yml`.
 
+**Fix:** Remove the plaintext credential and use an appropriate secret-management mechanism.
 
-## Problem 15
+**Why it matters:** Credentials must not be committed to source control.
 
-File: infra/main.tf  
-Fix: Set `https_only = true` on the App Service.  
-Why it matters: Allowing HTTP exposes traffic to interception. For POS systems handling pricing and potentially sensitive data, TLS everywhere is essential.
+### Issue: Test failures do not fail the pipeline
 
+**Current state:** The Maven test task uses `continueOnError: true`.
 
-## Problem 16
+**Fix:** Remove `continueOnError` and ensure failed tests fail the build.
 
-File: infra/main.tf  
-Fix: Introduce proper variable usage and separate `.tfvars` files for dev and prod (different SKUs, names, etc.), and ensure the configuration supports multiple environments cleanly.  
-Why it matters: A single hardcoded config doesn’t scale. For 38 countries and many environments, you need reusable, parameterised Terraform with clear dev/prod separation.
+**Why it matters:** A CI pipeline must prevent known failing tests from progressing towards deployment.
 
+### Issue: No coverage quality gate
 
-## Problem 17
+**Current state:** The pipeline does not enforce minimum test coverage.
 
-File: infra/main.tf  
-Fix: Configure the App Service to use the ACR login server correctly with managed identity, and wire Application Insights connection string into app settings.  
-Why it matters: Without proper integration, the app can’t pull images securely or emit telemetry. At scale, missing telemetry blinds you to issues affecting many outlets.
+**Fix:** Enforce the JaCoCo threshold during the Maven build.
 
+**Why it matters:** Prevents changes with insufficient test coverage from progressing through the pipeline.
 
-## Problem 18
+### Issue: No container vulnerability scanning
 
-File: infra/main.tf  
-Fix: Add monitoring alerts (e.g., HTTP 5xx > 10 in 5 minutes) and action groups.  
-Why it matters: You need proactive alerting to detect and respond to incidents before they impact large numbers of sites and customers.
+**Current state:** The container is built and pushed without a vulnerability scanning stage.
+
+**Fix:** Add a container image security scanning stage before the image is promoted for deployment.
+
+**Why it matters:** Vulnerable dependencies or operating-system packages should be identified before deployment.
+
+### Issue: Image uses only the `latest` tag
+
+**Current state:** The pipeline pushes `ssp/menu-service:latest`.
+
+**Fix:** Tag images with an immutable build identifier and deploy that specific image.
+
+**Why it matters:** Immutable image references provide traceability and make deployments reproducible.
+
+### Issue: No development deployment stage
+
+**Current state:** The pipeline deploys directly to production.
+
+**Fix:** Introduce separate development and production deployment stages.
+
+**Why it matters:** Provides an environment in which the built artefact can be validated before production deployment.
+
+### Issue: No production approval
+
+**Current state:** Production deployment occurs automatically after the preceding step.
+
+**Fix:** Add an Azure DevOps production environment with an appropriate approval/check.
+
+**Why it matters:** Provides an explicit production change-control point.
+
+### Issue: No post-deployment smoke test
+
+**Current state:** No application-level validation is performed after deployment.
+
+**Fix:** Add automated smoke tests for `/health` and `/menu/{unitId}` after deployment.
+
+**Why it matters:** Confirms that the deployed application is actually responding correctly.
+
+---
+
+## Terraform
+
+### Issue: ACR admin authentication is enabled
+
+**Current state:** `admin_enabled = true`.
+
+**Fix:** Disable ACR admin authentication and use the App Service managed identity with the `AcrPull` role.
+
+**Why it matters:** Avoids long-lived registry credentials and follows Azure identity-based access control.
+
+### Issue: HTTPS is not enforced
+
+**Current state:** `https_only = false`.
+
+**Fix:** Enable HTTPS-only access.
+
+**Why it matters:** Prevents unencrypted HTTP access to the application.
+
+### Issue: App Service has no managed identity
+
+**Current state:** No managed identity is configured.
+
+**Fix:** Enable a system-assigned managed identity and use it for ACR access.
+
+**Why it matters:** Enables passwordless Azure resource authentication.
+
+### Issue: No explicit ACR pull role assignment
+
+**Current state:** The App Service identity does not have an `AcrPull` role assignment.
+
+**Fix:** Grant the App Service managed identity the minimum required ACR pull permission.
+
+**Why it matters:** Applies least-privilege access to the container registry.
+
+### Issue: Container image is hard-coded to `latest`
+
+**Current state:** Terraform deploys `ssp/menu-service:latest`.
+
+**Fix:** Parameterise the image tag so deployments can reference an immutable build identifier.
+
+**Why it matters:** Ensures infrastructure deployment corresponds to a known application build.
+
+### Issue: No production monitoring/alerting
+
+**Current state:** No HTTP 5xx alert is configured.
+
+**Fix:** Add monitoring and an appropriate production 5xx alert.
+
+**Why it matters:** Provides operational visibility and allows failures to be detected after deployment.
